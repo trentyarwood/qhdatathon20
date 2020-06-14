@@ -1,0 +1,456 @@
+---
+title: "Cairns AMS Data"
+author: "Trent Yarwood"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    navbar:
+     - { title: "CHHHS AMS Home", href: "https://qheps/cairns/", align: left}
+    social: ["menu" ]
+    source_code: embed
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+##Load R Libraries for Dashboard
+
+## Dashboard
+library(flexdashboard)
+library(shiny)
+
+## Data import and manipulation
+library(tidyverse)
+library(rmarkdown)
+
+## Plotting
+
+## Define function to import data from xlsx into DFs, named by xlsx tab
+## Also an option to import into items on a list; but can't work out how to dplyr list data properly
+
+importDataFrames <- function(filename){
+     sheets <- readxl::excel_sheets(filename)
+     for(x in seq_along(sheets)){
+          assign(sheets[x], readxl::read_excel(filename, sheet = sheets[x], col_names = TRUE), envir = .GlobalEnv)
+     }
+}
+
+
+## Define list vectors for sorting
+hoslist <- c("cairns", "atherton", "innisfail", "mossman", "mareeba")
+abxlist = c("dicloxacillin", "flucloxacillin", "benzylpenicillin", "phenoxymethylpenicillin", "amoxycillin", "ampicillin", "ertapenem", "imipenem", "meropenem", "amoxycillin-clavulanate", "piperacillin-tazobactam", "ticarcillin-clavulanate", "cotrimoxazole", "cephalexin", "cefalotin", "cefazolin", "cefoxitin", "cefuroxime", "ciprofloxacin", "moxifloxacin", "norfloxacin", "cefipime", "teicoplanin", "vancomycin", "metronidazole", "tinidazole", "clindamycin", "lincomycin", "azithromycin", "erythromycin", "clarithromycin", "roxithromycin", "aztreonam",  "gentamicin", "tobramycin", "daptomycin", "linezolid", "colisitin", "fusidin", "pristinamycin", "doxycycline", "cefotaxime", "ceftazidime", "ceftriaxone", "trimethoprim")
+staphpen <- c("dicloxacillin", "flucloxacillin")
+narrowpen <- c("benzylpenicillin", "phenoxymethylpenicillin", "amoxycillin", "ampicillin")
+penem <- c("ertapenem", "imipenem", "meropenem")
+pseudpen <- c("piperacillin-tazobactam", "ticarcillin-clavulanate")
+earlyceph <- c("cephalexin", "cefalotin", "cefazolin", "cefoxitin", "cefuroxime")
+quinolone <- c("ciprofloxacin", "norfloxacin", "moxifloxacin")
+lateceph <- c("ceftriaxone", "cefotaxime", "ceftazidime", "cefipime")
+gpeptide <- c("teicoplanin", "vancomycin")
+lincos <- c("clindamycin", "lincomycin")
+macrolide <- c("azithromycin", "erythromycin", "clarithromycin", "roxithromycin")
+aglycos <- c("gentamicin", "tobramycin", "amikacin")
+other <- c("amoxycillin-clavulanate", "metronidazole", "tinidazole", "cotrimoxazole", "aztreonam", "daptomycin", "linezolid", "colisitin", "fusidin", "pristinamycin", "doxycycline", "trimethoprim")
+```
+
+```{r}
+## Import data from xlsx
+## Data source is 5-tabbed spreadsheet, tab hospitals, date rows, antibiotic columns, usage data
+importDataFrames("district_abx.xlsx")
+## Data output is 5x data frames, one for each tab
+
+## Tidy data;  would love to do this with a list and lapply if possible
+c1 <- cairns %>%
+     gather(antibiotic, usage, -date)             # column "antibiotic" from df column headers
+cact <- filter(c1, antibiotic == "activity")      # spreadsheet also includes activity data - separate this
+cact <- mutate(cact, hospital = "cairns")         # column with hospital name for activity df
+c2 <- c1 %>%
+     filter(antibiotic %in% abxlist) %>%          # filter out the extra columns (activity, totals)
+     droplevels()
+cairns <- mutate(c2, hospital = "cairns")         # column "hospital" for antibiotic data
+
+a1 <- atherton %>%
+     gather(antibiotic, usage, -date)
+aact <- filter(a1, antibiotic == "activity")
+aact <- mutate(aact, hospital ="atherton")
+a2 <- a1 %>%
+     filter(antibiotic %in% abxlist) %>%
+     droplevels()
+atherton <- mutate(a2, hospital = "atherton")
+
+i1 <- innisfail %>%
+     gather(antibiotic, usage, -date)
+iact <- filter(i1, antibiotic == "activity")
+iact <- mutate(iact, hospital = "innisfail")
+i2 <- i1 %>%
+     filter(antibiotic %in% abxlist) %>%
+     droplevels()
+innisfail <- mutate(i2, hospital = "innisfail")
+
+ma1 <- mareeba %>%
+     gather(antibiotic, usage, -date)
+maact <- filter(ma1, antibiotic == "activity")
+maact <- mutate(maact, hospital = "mareeba")
+ma2 <- ma1 %>%
+     filter(antibiotic %in% abxlist) %>%
+     droplevels()
+mareeba <- mutate(ma2, hospital = "mareeba")
+
+mo1 <- mossman %>%
+     gather(antibiotic, usage, -date)
+moact <- filter(mo1, antibiotic == "activity")
+moact <- mutate(moact, hospital = "mossman")
+mo2 <- mo1 %>%
+     filter(antibiotic %in% abxlist) %>%
+     droplevels()
+mossman <- mutate(mo2, hospital = "mossman")
+
+activity <- rbind(cact, aact, iact, maact, moact)     # single df for all the activity data  
+activity$date <- as.Date(activity$date)               # make sure activity dates are as.Date
+
+usage <- rbind(cairns, atherton, innisfail, mossman, mareeba) #single df for the usage data
+usage$date <- as.Date(usage$date)                     # make sure usage dates are as.Date
+usage$hospital <- ordered(usage$hospital, levels = c("cairns", "atherton", "innisfail", "mareeba", "mossman"))                                           # bar graphs in sensible hospital order
+
+## add column to data for antibiotic class for sorting / graphing
+## there *must* be a way to apply this, surely?
+usage$class[usage$antibiotic %in% staphpen == TRUE] <- "anti.staph.penicillin"
+usage$class[usage$antibiotic %in% narrowpen == TRUE] <- "narrow.penicillin"
+usage$class[usage$antibiotic %in% penem == TRUE] <- "carbapenem"
+usage$class[usage$antibiotic %in% pseudpen == TRUE] <- "anti.pseud.penicillin"
+usage$class[usage$antibiotic %in% earlyceph == TRUE] <- "early.gen.cephalosporin"
+usage$class[usage$antibiotic %in% quinolone == TRUE] <- "fluoroquinolone"
+usage$class[usage$antibiotic %in% lateceph == TRUE] <- "late.gen.cephalosporin"
+usage$class[usage$antibiotic %in% gpeptide == TRUE] <- "glycopeptide"
+usage$class[usage$antibiotic %in% lincos == TRUE] <- "lincosamide"
+usage$class[usage$antibiotic %in% macrolide == TRUE] <- "macrolide"
+usage$class[usage$antibiotic %in% aglycos == TRUE] <- "aminoglycoside"
+usage$class[usage$antibiotic %in% other == TRUE] <- "other.antimicrobials"
+
+
+```
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+
+## Hospital / District
+
+selectInput("hosp",
+            label = h4("Select hospital:"),
+            choices = list("District" = "chhhs",
+                           "Cairns" = "cairns",
+                           "Atherton" = "atherton",
+                           "Innisfail" = "innisfail",
+                           "Mareeba" = "mareeba",
+                           "Mossman" = "mossman"), selected = "cairns")
+
+selectInput("ctype",
+            label = h4("Select Second Chart Type:"),
+            choices = list("None" = "none",
+                           "By class" = "byclass",
+                           "By agent" = "bydrug"), selected = "byclass")
+```
+
+```{r}
+conditionalPanel("input.ctype == 'byclass'",
+             selectInput("abclass",
+                         label = h4("Select Class:"),
+                         choices = list("Anti-Pseud Penicillins" = "anti.pseud.penicillin",
+                                        "Late-gen Cephalosporins" = "late.gen.cephalosporin",
+                                        "Fluoroquinolones" = "fluoroquinolone",
+                                        "Carbapenems" = "carbapenem",
+                                        "Lincosamides" = "lincosamide",
+                                        "Macrolides" = "macrolide",
+                                        "Glycopeptides" = "glycopeptide",
+                                        "Early Cephalosporin" = "early.gen.cephalosporin",
+                                        "Narrow Penicillins" = "narrow.penicillin",
+                                        "Anti-Staph Penicillins" = "anti.staph.penicillin",
+                                        "Aminoglycosides" = "aminoglycoside",
+                                        "Other Antibiotics" = "other.antimicrobials"), selected = "anti.pseud.penicillin")
+)
+```
+
+```{r}
+conditionalPanel("input.ctype == 'bydrug'",
+                 selectInput("abagent",
+                             label = h4("Select Agent:"),
+                             choices = list("Pip-Tazo" = "piperacillin-tazobactam",
+                                            "Ceftriaxone" = "ceftriaxone",
+                                            "Meropenem" = "meropenem",
+                                            "Ciprofloxacin" = "ciprofloxacin",
+                                            "Lincomycin" = "lincomycin",
+                                            "Clindamycin" = "clindamycin",
+                                            "Azithromycin" = "azithromycin",
+                                            "Amoxycillin" = "amoxycillin",
+                                            "Co-amoxyclav" = "amoxycillin-clavulanate",
+                                            "Cephazolin" = "cefazolin",
+                                            "Gentamicin" = "gentamicin",
+                                            "Doxycycline" = "doxycycline"), selected = "piperacillin-tazobactam")
+)
+
+```
+
+```{r}
+sliderInput("dates",
+            label = h4("Select dates:"),
+            min = as.Date("2006-01-01"), max = max(as.Date(usage$date)),
+            value = c(as.Date("2006-01-01"), as.Date("2018-08-01")),
+            timeFormat = "%b-%Y")
+
+checkboxInput('points', 'Points', value = FALSE)
+checkboxInput('smooth', 'Smooth', value = TRUE)
+checkboxInput('line', "Line", value = FALSE)
+checkboxInput("contct", "Control Limit", value = FALSE)
+
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Most Recent data
+```{r}
+# infobox showing the most recent data point to see completeness of dataset
+nicedate <- format(max(usage$date), "%b %Y")
+valueBox(max(nicedate), icon = "fa-calendar")
+```
+
+### Number of Observations
+```{r}
+# infobox with number of observations; mainly to pad out the box row; probably not useful
+valueBox(count(usage), icon = "fa-calculator")
+```
+
+### Mean Service Activity
+```{r}
+## If district selected, return mean total service activity, else facility mean activity
+renderValueBox({
+     if(input$hosp == "chhhs"){
+          msact <- mean(summarise(group_by(activity, date), total = sum(usage))$total)
+     } else {msact <- mean(summarise(group_by(filter(activity, hospital == input$hosp), date), total  = sum(usage))$total)}
+     
+     valueBox(
+          value = round(msact, digits = 0),
+          icon = "fa-hospital-o"
+          )
+})
+
+```
+
+
+### Last Month Service Activity
+```{r}
+## HHS or Facility service activity for most recent month in dataset
+## If activity is < 15% above mean; normal
+## If activity 15<30% above mean; warn
+## If activity >30%; danger
+
+renderValueBox({
+      if(input$hosp == "chhhs"){
+           msact <- mean(summarise(group_by(activity, date), total  = sum(usage))$total)
+           actwk <- summarise(group_by(activity, date), total  = sum(usage))  # makes it easier to select!
+           scact <- actwk$total[actwk$date == max(actwk$date)]
+      } else {
+           msact <- mean(summarise(group_by(filter(activity, hospital == input$hosp), date), total  = sum(usage))$total)
+           actwk <- summarise(group_by(filter(activity, hospital == input$hosp),date), total  = sum(usage))
+           scact <- actwk$total[actwk$date == max(actwk$date)]
+           }
+      
+cactr <- scact / msact
+
+if(cactr < 1.15){
+     valueBox(scact,
+              icon = "fa-ambulance",
+              color = "primary")
+} else if(cactr > 1.30){
+     valueBox(scact,
+              icon = "fa-warning",
+              color = "danger")
+} else {
+     valueBox(scact,
+              icon = "fa-ambulance",
+              color = "warning")
+}
+})
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+### Total Usage
+
+```{r}
+     renderPlot({
+
+          if(input$hosp == "chhhs"){
+               
+          plotdat <- summarise(group_by(filter(usage, date >= input$dates[1] & date <= input$dates[2]), date, hospital), total = round(sum(usage)))
+          
+          p <- ggplot(data = plotdat, aes(x = date, y = total)) + geom_bar(stat = "identity", aes(fill = hospital)) + scale_x_date(date_breaks = "1 year", date_labels = "%b-%Y", name = "Month - Year") + scale_y_continuous(name = "DDD / 1000 patient-days") + scale_fill_brewer(palette = "Spectral")
+          
+          print(p)
+     }
+           else if(input$hosp != "chhhs"){
+               
+          plotdat <- summarise(group_by(filter(usage, hospital == input$hosp, date >= input$dates[1] & date <= input$dates[2]), date), total = round(sum(usage)))
+          
+          if(input$contct){
+               
+                    plotdat <- mutate(plotdat, contlim =(total + (sd(plotdat$total)*2)))
+               }
+     
+          p <- ggplot(data = plotdat, aes(x = date, y = total)) + scale_x_date(date_breaks = "1 year", date_labels = "%b-%Y", name = "Month - Year") + scale_y_continuous(name = "DDD / 1000 patient-days")
+     
+          if(input$points){
+               p <- p + geom_point()
+          }
+          if(input$smooth){
+               p <- p + stat_smooth(colour = 'red')
+          }
+          if(input$line){
+               p <- p + geom_line()
+          }
+          
+          if(input$contct){
+                    p <- p + geom_smooth(se = FALSE, aes(y = contlim), color = 'orange')
+               }
+          print(p)
+     }
+})
+```
+
+```{r}
+
+```
+
+Row {.tabset}
+-----------------------------------------------------------------------
+
+### Agent / Class
+
+
+```{r}
+
+renderPlot({
+
+if(input$hosp == "chhhs"){
+               
+          plotdat <- summarise(group_by(filter(usage, date >= input$dates[1] & date <= input$dates[2]), date), total = round(sum(usage)))
+          
+          if(input$contct){
+               
+                    plotdat <- mutate(plotdat, contlim =(total + (sd(plotdat$total)*2)))
+               }
+     
+          p <- ggplot(data = plotdat, aes(x = date, y = total)) + scale_x_date(date_breaks = "1 year", date_labels = "%b-%Y", name = "Month - Year") + scale_y_continuous(name = "DDD / 1000 patient-days")
+     
+          if(input$points){
+               p <- p + geom_point()
+          }
+          if(input$smooth){
+               p <- p + stat_smooth(colour = 'red')
+          }
+          if(input$line){
+               p <- p + geom_line()
+          }
+          
+          if(input$contct){
+                    p <- p + geom_smooth(se = FALSE, aes(y = contlim), color = 'orange')
+               }
+          print(p)
+     }     
+     
+        else if(input$ctype == "bydrug"){
+      
+          plotdat <- summarise(group_by(filter(usage, hospital == input$hosp, antibiotic == input$abagent, date >= input$dates[1] & date <= input$dates[2]), date), total = round(sum(usage)))
+     }
+     
+     else if(input$ctype == "byclass"){
+          plotdat <- summarise(group_by(filter(usage, hospital == input$hosp, class == input$abclass, date >= input$dates[1] & date <= input$dates[2]), date), total = round(sum(usage)))
+     }
+      
+     if(input$contct){
+               
+                    plotdat <- mutate(plotdat, contlim =(total + (sd(plotdat$total)*2)))
+               }    
+     
+     p <- ggplot(data = plotdat, aes(x = date, y = total)) + scale_x_date(date_breaks = "1 year", date_labels = "%b-%Y", name = "Month - Year") + scale_y_continuous(name = "DDD / 1000 patient-days")
+
+          if(input$points){
+               p <- p + geom_point()
+          }
+         
+          if(input$smooth){
+               p <- p + stat_smooth(colour = 'red')
+          }
+          
+          if(input$line){
+               p <- p + geom_line()
+          }
+     
+          if(input$contct){
+                    p <- p + geom_smooth(se = FALSE, aes(y = contlim), color = 'orange')
+               }
+          print(p)
+})
+```
+
+### Activity
+```{r}
+renderPlot({
+
+     if(input$hosp == "chhhs"){
+          
+          plotdat = summarise(group_by(filter(activity, date >= input$dates[1] & date <= input$dates[2]), date), total = sum(usage))
+     
+     } else {
+          
+          plotdat = summarise(group_by(filter(activity, hospital == input$hosp, date >= input$dates[1] & date <= input$dates[2]), date), total = sum(usage))
+     }
+     
+     p <- ggplot(data = plotdat, aes (x = date, y = total)) + scale_x_date(date_breaks = "1 year", date_labels = "%b-%Y", name = "Month - Year") + scale_y_continuous(name = "Patient-days / month")
+     
+          if(input$points){
+               p <- p + geom_point()
+          }
+         
+          if(input$smooth){
+               p <- p + stat_smooth(colour = 'blue')
+          }
+          
+          if(input$line){
+               p <- p + geom_line()
+          }
+          
+          print(p)
+})
+```
+
+### Facility Data
+
+```{r}
+DT::renderDataTable({
+  tab1 <- summarise(group_by(filter(usage, hospital == input$hosp, date >= as.Date(input$dates[1]) & date <= as.Date(input$dates[2])), date), total = round(sum(usage)))
+  DT::datatable(tab1, options = list(pageLength = 100))
+})
+```
+
+
+### Agent Data
+
+```{r}
+DT::renderDataTable({
+  tab2 <- summarise(group_by(filter(usage, antibiotic == input$abagent, hospital == input$hosp, date >= as.Date(input$dates[1]) & date <= as.Date(input$dates[2])), date), total = round(sum(usage)))
+  DT::datatable(tab2, options = list(pageLength = 100))
+})
+```
+
+### District Data
+
+```{r}
+DT::renderDataTable({
+  tab3 <- summarise(group_by(filter(usage, date >= as.Date(input$dates[1]) & date <= as.Date(input$dates[2])), date), total = round(sum(usage)))
+  DT::datatable(tab3, options = list(pageLength = 100))
+})
+```
